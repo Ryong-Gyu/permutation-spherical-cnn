@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import itertools
+import math
+
 import torch
 
 
@@ -13,6 +15,122 @@ def normalize_points(points: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
     points = torch.as_tensor(points, dtype=torch.float32)
     norms = points.norm(dim=1, keepdim=True).clamp_min(eps)
     return points / norms
+
+
+def build_rotation_matrices_about_z(n: int) -> torch.Tensor:
+    """
+    Build the n proper rotation matrices corresponding to n-fold symmetry
+    around the z axis.
+
+    Returns
+    -------
+    rotations : (n, 3, 3)
+    """
+    if n < 1:
+        raise ValueError("n must be at least 1")
+
+    mats = []
+    for k in range(n):
+        theta = (2.0 * math.pi * k) / n
+        c = math.cos(theta)
+        s = math.sin(theta)
+        mats.append(
+            torch.tensor(
+                [
+                    [c, -s, 0.0],
+                    [s, c, 0.0],
+                    [0.0, 0.0, 1.0],
+                ],
+                dtype=torch.float32,
+            )
+        )
+
+    return torch.stack(mats, dim=0)
+
+
+def build_nfold_symmetric_spherical_grid(
+    n: int,
+    *,
+    radius: float = 1.0,
+    azimuth_offset_degrees: float = 0.0,
+    dtype: torch.dtype = torch.float32,
+    device: torch.device | str | None = None,
+):
+    """
+    Build a spherical sampling grid by sweeping spherical coordinates on
+    theta/phi steps of pi/n and 2*pi/n respectively.
+
+    The layout is:
+        1 center
+        1 north pole
+        n taps for each intermediate theta = i*pi/n, i=1, ..., n-1
+        1 south pole
+
+    For each intermediate theta ring, the azimuth sampling is
+        phi_k = offset + 2*pi*k/n,  k = 0, ..., n-1
+
+    Returns
+    -------
+    points : (n * (n - 1) + 3, 3)
+        Cartesian coordinates ordered as [center, north pole, theta-rings..., south pole].
+    index_map : dict[str, int | torch.Tensor]
+        Convenience indices for the grid layout. ``theta_rings[i - 1]`` corresponds
+        to the ring sampled at ``theta = i*pi/n``.
+    """
+    if n < 2:
+        raise ValueError("n must be at least 2")
+    if radius <= 0:
+        raise ValueError("radius must be positive")
+
+    dtype = torch.float32 if dtype is None else dtype
+
+    az0 = math.radians(azimuth_offset_degrees)
+    angles = az0 + (2.0 * math.pi / n) * torch.arange(n, dtype=dtype, device=device)
+    cos_a = torch.cos(angles)
+    sin_a = torch.sin(angles)
+
+    def _ring(theta: float) -> torch.Tensor:
+        xy_radius = radius * math.sin(theta)
+        z_value = radius * math.cos(theta)
+        z = torch.full((n,), z_value, dtype=dtype, device=device)
+        x = xy_radius * cos_a
+        y = xy_radius * sin_a
+        return torch.stack([x, y, z], dim=1)
+
+    center = torch.zeros((1, 3), dtype=dtype, device=device)
+    north_pole = torch.tensor([[0.0, 0.0, radius]], dtype=dtype, device=device)
+    rings = []
+    ring_indices = []
+
+    start = 2
+    for i in range(1, n):
+        theta = (math.pi * i) / n
+        ring = _ring(theta)
+        rings.append(ring)
+        ring_indices.append(torch.arange(start, start + n, device=device))
+        start += n
+
+    south_pole = torch.tensor([[0.0, 0.0, -radius]], dtype=dtype, device=device)
+
+    points = torch.cat(
+        [center, north_pole, *rings, south_pole],
+        dim=0,
+    )
+
+    theta_values = torch.linspace(0.0, math.pi, steps=n + 1, dtype=dtype, device=device)
+    phi_values = angles.remainder(2.0 * math.pi)
+    index_map = {
+        "center": 0,
+        "north_pole": 1,
+        "south_pole": start,
+        "rings": tuple(ring_indices),
+        "theta_rings": tuple(ring_indices),
+        "surface": torch.arange(1, start + 1, device=device),
+        "theta_values": theta_values,
+        "phi_values": phi_values,
+    }
+
+    return points, index_map
 
 
 def build_rotation_matrices_from_axis_permutations() -> torch.Tensor:
