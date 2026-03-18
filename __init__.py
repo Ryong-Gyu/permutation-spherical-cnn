@@ -8,7 +8,14 @@ from .spherical_canonicalizer import (
 )
 from .spherical_topology import (
     normalize_points,
+    build_rotation_matrices_about_z,
+    build_minimal_rotation_matrix,
+    build_nfold_symmetric_spherical_grid,
+    invert_permutation,
+    compose_permutations,
+    build_tilt_permutations_to_north,
     build_all_permutations_from_rotations,
+    build_tilt_spin_permutation_bank,
     build_rotation_matrices_from_axis_permutations,
 )
 from .stencil_conv3d import StencilConv3d
@@ -21,7 +28,14 @@ __all__ = [
     "build_equator_and_perm_tables",
     "SphericalTapCanonicalizer",
     "normalize_points",
+    "build_rotation_matrices_about_z",
+    "build_minimal_rotation_matrix",
+    "build_nfold_symmetric_spherical_grid",
+    "invert_permutation",
+    "compose_permutations",
+    "build_tilt_permutations_to_north",
     "build_all_permutations_from_rotations",
+    "build_tilt_spin_permutation_bank",
     "build_rotation_matrices_from_axis_permutations",
     "StencilConv3d",
 ]
