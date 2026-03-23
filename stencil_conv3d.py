@@ -7,8 +7,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .spherical_canonicalizer import SphericalTapCanonicalizer
-
 
 class StencilConv3d(nn.Module):
     """
@@ -26,8 +24,6 @@ class StencilConv3d(nn.Module):
         padding: Union[int, Iterable[int]] = 0,
         bias: bool = True,
         padding_mode: str = "zeros",
-        equator_mask: torch.Tensor | None = None,
-        perm_table: torch.Tensor | None = None,
         dtype: torch.dtype = torch.float32,
         device: Union[torch.device, str, None] = None,
     ) -> None:
@@ -65,14 +61,6 @@ class StencilConv3d(nn.Module):
         else:
             self.register_parameter("bias", None)
 
-        if equator_mask is not None and perm_table is not None:
-            self.canonicalizer = SphericalTapCanonicalizer(
-                equator_mask=equator_mask,
-                perm_table=perm_table,
-            )
-        else:
-            self.canonicalizer = None
-
         self.reset_parameters()
 
     def reset_parameters(self) -> None:
@@ -90,8 +78,7 @@ class StencilConv3d(nn.Module):
             f"stencil_shape={self.stencil_shape}, "
             f"stride={self.stride}, "
             f"padding={self.padding}, "
-            f"padding_mode='{self.padding_mode}', "
-            f"canonicalizer={'yes' if self.canonicalizer is not None else 'no'}"
+            f"padding_mode='{self.padding_mode}'"
         )
 
     def _apply_padding(self, x: torch.Tensor) -> torch.Tensor:
@@ -157,16 +144,9 @@ class StencilConv3d(nn.Module):
         D_out, H_out, W_out = tap_values.shape[-3:]
         tap_values = tap_values.view(B, Cin, self.num_taps, D_out, H_out, W_out)
 
-        if self.canonicalizer is not None:
-            tap_values, final_perm, pole_idx, front_idx = self.canonicalizer(tap_values)
-        else:
-            final_perm = None
-            pole_idx = None
-            front_idx = None
-
         y_out = torch.einsum("bctdhw,oct->bodhw", tap_values, self.weight)
 
         if self.bias is not None:
             y_out = y_out + self.bias.view(1, -1, 1, 1, 1)
 
-        return y_out, final_perm, pole_idx, front_idx
+        return y_out
